@@ -16,11 +16,10 @@ const (
 )
 
 const (
-	HeaderRange  = "Range"
-	HeaderLength = "Content-Length"
+	headerRange = "Range"
 )
 
-type RemoteFile struct {
+type remoteFile struct {
 	client      *http.Client
 	req         *http.Request
 	rd          *io.PipeReader
@@ -30,21 +29,21 @@ type RemoteFile struct {
 	debug       bool
 }
 
-type RemoteFileOption func(*RemoteFile) error
+type Option func(*remoteFile) error
 
-func (f *RemoteFile) Read(p []byte) (int, error) {
+func (f *remoteFile) Read(p []byte) (int, error) {
 	return f.rd.Read(p)
 }
 
 // GetContext get's the requested file concurrently in chunks
-func GetContext(ctx context.Context, url string, opts ...RemoteFileOption) (io.Reader, error) {
+func GetContext(ctx context.Context, url string, opts ...Option) (io.Reader, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	rd, wr := io.Pipe()
-	file := &RemoteFile{
+	file := &remoteFile{
 		client:      http.DefaultClient,
 		req:         req,
 		rd:          rd,
@@ -52,7 +51,7 @@ func GetContext(ctx context.Context, url string, opts ...RemoteFileOption) (io.R
 		chunkSize:   DefaultChunkSize,
 	}
 
-	if err := RemoteFileOptions(opts...)(file); err != nil {
+	if err := Options(opts...)(file); err != nil {
 		return nil, err
 	}
 
@@ -71,7 +70,7 @@ func GetContext(ctx context.Context, url string, opts ...RemoteFileOption) (io.R
 	if resLen := res.ContentLength; resLen != 0 {
 		file.size = int(resLen)
 	} else {
-		contentRange := res.Header.Get(HeaderRange)
+		contentRange := res.Header.Get(headerRange)
 		parts := strings.Split(contentRange, "/")
 
 		total := -1
@@ -104,11 +103,11 @@ func GetContext(ctx context.Context, url string, opts ...RemoteFileOption) (io.R
 }
 
 // Get get's the requested file concurrently in chunks
-func Get(url string, opts ...RemoteFileOption) (io.Reader, error) {
+func Get(url string, opts ...Option) (io.Reader, error) {
 	return GetContext(context.Background(), url, opts...)
 }
 
-func (f *RemoteFile) getChunk(ctx context.Context, concurrencyLock chan struct{}, sequenceLock <-chan struct{}, start int, wr *io.PipeWriter) {
+func (f *remoteFile) getChunk(ctx context.Context, concurrencyLock chan struct{}, sequenceLock <-chan struct{}, start int, wr *io.PipeWriter) {
 	if start == f.size+1 {
 		defer close(concurrencyLock)
 
@@ -138,7 +137,7 @@ func (f *RemoteFile) getChunk(ctx context.Context, concurrencyLock chan struct{}
 	go f.getChunk(ctx, concurrencyLock, next, end+1, wr)
 
 	req := f.req.Clone(ctx)
-	req.Header.Add(HeaderRange, fmt.Sprintf("bytes=%d-%d", start, end))
+	req.Header.Add(headerRange, fmt.Sprintf("bytes=%d-%d", start, end))
 
 	// TODO: implement retries
 	res, err := f.client.Do(req)
@@ -168,9 +167,9 @@ func (f *RemoteFile) getChunk(ctx context.Context, concurrencyLock chan struct{}
 	}
 }
 
-// RemoteFileOptions is a collection of options
-func RemoteFileOptions(opts ...RemoteFileOption) RemoteFileOption {
-	return func(f *RemoteFile) error {
+// Options is a collection of options
+func Options(opts ...Option) Option {
+	return func(f *remoteFile) error {
 		for _, opt := range opts {
 			if err := opt(f); err != nil {
 				return err
@@ -182,8 +181,8 @@ func RemoteFileOptions(opts ...RemoteFileOption) RemoteFileOption {
 }
 
 // WithHeader sets headers to be used with the request
-func WithHeader(key, value string) RemoteFileOption {
-	return func(f *RemoteFile) error {
+func WithHeader(key, value string) Option {
+	return func(f *remoteFile) error {
 		f.req.Header.Add(key, value)
 
 		return nil
@@ -191,8 +190,8 @@ func WithHeader(key, value string) RemoteFileOption {
 }
 
 // WithClient sets the client that should be used
-func WithClient(client *http.Client) RemoteFileOption {
-	return func(f *RemoteFile) error {
+func WithClient(client *http.Client) Option {
+	return func(f *remoteFile) error {
 		if client != nil {
 			f.client = client
 		}
@@ -202,8 +201,8 @@ func WithClient(client *http.Client) RemoteFileOption {
 }
 
 // WithConcurrency sets the concurrency limit for this request
-func WithConcurrency(c int) RemoteFileOption {
-	return func(f *RemoteFile) error {
+func WithConcurrency(c int) Option {
+	return func(f *remoteFile) error {
 		if c < 1 {
 			c = 1
 		}
@@ -215,8 +214,8 @@ func WithConcurrency(c int) RemoteFileOption {
 }
 
 // WithChuckSize sets the chunksize for the requests
-func WithChunkSize(c int) RemoteFileOption {
-	return func(f *RemoteFile) error {
+func WithChunkSize(c int) Option {
+	return func(f *remoteFile) error {
 		if c < 1 {
 			c = DefaultChunkSize
 		}
@@ -228,8 +227,8 @@ func WithChunkSize(c int) RemoteFileOption {
 }
 
 // WithDebug sets the debug flag for debug logs
-func WithDebug() RemoteFileOption {
-	return func(f *RemoteFile) error {
+func WithDebug() Option {
+	return func(f *remoteFile) error {
 		f.debug = true
 
 		return nil
