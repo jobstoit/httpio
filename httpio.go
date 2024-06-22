@@ -27,6 +27,7 @@ type RemoteFile struct {
 	chunkSize   int
 	concurrency int
 	size        int
+	debug       bool
 }
 
 type RemoteFileOption func(*RemoteFile) error
@@ -59,6 +60,7 @@ func GetContext(ctx context.Context, url string, opts ...RemoteFileOption) (io.R
 	if err != nil {
 		return nil, err
 	}
+	sizeReq.Header = req.Header.Clone()
 
 	res, err := file.client.Do(sizeReq)
 	if err != nil {
@@ -93,6 +95,10 @@ func GetContext(ctx context.Context, url string, opts ...RemoteFileOption) (io.R
 	defer close(sl)
 
 	go file.getChunk(ctx, cl, sl, 0, wr)
+
+	if file.debug {
+		log.Printf("fetching '%s' with length: %d", file.req.URL.String(), file.size)
+	}
 
 	return file, nil
 }
@@ -155,7 +161,10 @@ func (f *RemoteFile) getChunk(ctx context.Context, concurrencyLock chan struct{}
 		if err != nil {
 			wr.CloseWithError(err)
 		}
-		log.Printf("write '%s', range %d-%d/%d", f.req.URL.String(), start, end, f.size)
+
+		if f.debug {
+			log.Printf("write '%s', range %d-%d/%d", f.req.URL.String(), start, end, f.size)
+		}
 	}
 }
 
@@ -213,6 +222,15 @@ func WithChunkSize(c int) RemoteFileOption {
 		}
 
 		f.chunkSize = c
+
+		return nil
+	}
+}
+
+// WithDebug sets the debug flag for debug logs
+func WithDebug() RemoteFileOption {
+	return func(f *RemoteFile) error {
+		f.debug = true
 
 		return nil
 	}
