@@ -66,13 +66,8 @@ func GetContext(ctx context.Context, url string, opts ...RemoteFileOption) (io.R
 	}
 	defer res.Body.Close()
 
-	if resLen := res.Header.Get(HeaderLength); resLen != "" {
-		scl, err := strconv.Atoi(resLen)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse content len: %w", err)
-		}
-
-		file.size = scl
+	if resLen := res.ContentLength; resLen != 0 {
+		file.size = int(resLen)
 	} else {
 		contentRange := res.Header.Get(HeaderRange)
 		parts := strings.Split(contentRange, "/")
